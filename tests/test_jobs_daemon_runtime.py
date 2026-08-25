@@ -56,6 +56,38 @@ def test_run_jobs_daemon_run_once_executes_single_cycle(tmp_path, monkeypatch):
     assert len(calls) == 1
 
 
+def test_run_jobs_daemon_forwards_region(tmp_path, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_run_jobs_pipeline(**kwargs):
+        calls.append(kwargs)
+        return PipelineOutcome(
+            exit_code=0,
+            scraped=1,
+            inserted=1,
+            updated=0,
+            unchanged=0,
+            failures=[],
+            elapsed_seconds=0.1,
+            strategy="scrape",
+        )
+
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline_with_outcome", fake_run_jobs_pipeline)
+    code = run_jobs_daemon(
+        limit_per_source=5,
+        output_path=str(tmp_path / "jobs.csv"),
+        db_path=str(tmp_path / "jobs.db"),
+        window_start="00:00",
+        window_end="23:59",
+        timezone_name="Europe/Madrid",
+        run_once=True,
+        lock_path=str(tmp_path / "daemon.lock"),
+        region="cantabria",
+    )
+    assert code == 0
+    assert calls[0]["region"] == "cantabria"
+
+
 def test_run_jobs_daemon_exits_on_stagnation_threshold(tmp_path, monkeypatch):
     def fake_run_jobs_pipeline(**kwargs):
         return PipelineOutcome(

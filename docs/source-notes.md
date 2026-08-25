@@ -5,6 +5,10 @@
 - `indeed` (via `jobspy_indeed`): fuente principal para volumen.
 - `sce`: fuente pública oficial del Servicio Canario de Empleo.
 - `turijobs`: fuente complementaria para hostelería/turismo.
+- `emcan`: fuente pública oficial para Cantabria mediante el portal SNE (`--region cantabria`).
+- `trabajocantabria`: ofertas de la agencia de colocación CEOE-CEPYME Cantabria.
+
+Investigación y decisiones para Cantabria: `docs/cantabria-job-sources.md`.
 
 ## Excluded Source
 

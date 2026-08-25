@@ -12,6 +12,18 @@ MUNICIPALITY_INDEX = {
     "san cristóbal de la laguna": ("San Cristobal de La Laguna", "Tenerife", "Santa Cruz de Tenerife"),
     "arrecife": ("Arrecife", "Lanzarote", "Las Palmas"),
     "puerto del rosario": ("Puerto del Rosario", "Fuerteventura", "Las Palmas"),
+    "santander": ("Santander", None, "Cantabria"),
+    "torrelavega": ("Torrelavega", None, "Cantabria"),
+    "camargo": ("Camargo", None, "Cantabria"),
+    "maliaño": ("Maliaño", None, "Cantabria"),
+    "castro urdiales": ("Castro-Urdiales", None, "Cantabria"),
+    "castro-urdiales": ("Castro-Urdiales", None, "Cantabria"),
+    "laredo": ("Laredo", None, "Cantabria"),
+    "pielagos": ("Piélagos", None, "Cantabria"),
+    "piélagos": ("Piélagos", None, "Cantabria"),
+    "astillero, el": ("El Astillero", None, "Cantabria"),
+    "el astillero": ("El Astillero", None, "Cantabria"),
+    "santa cruz de bezana": ("Santa Cruz de Bezana", None, "Cantabria"),
 }
 
 ISLAND_ALIASES = {
@@ -27,6 +39,7 @@ ISLAND_ALIASES = {
 PROVINCE_ALIASES = {
     "las palmas": "Las Palmas",
     "santa cruz de tenerife": "Santa Cruz de Tenerife",
+    "cantabria": "Cantabria",
 }
 
 

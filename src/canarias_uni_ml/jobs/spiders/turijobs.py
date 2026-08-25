@@ -19,13 +19,20 @@ except ImportError:  # pragma: no cover
 
 TURIJOBS_BASE = "https://www.turijobs.com"
 TURIJOBS_SITEMAP_URL = "https://www.turijobs.com/es-es/sitemap/active-offers.xml"
-TURIJOBS_LOCATION_MARKERS = ("islas-canarias", "las-palmas", "santa-cruz-de-tenerife")
+TURIJOBS_LOCATION_MARKERS = {
+    "canarias": ("islas-canarias", "las-palmas", "santa-cruz-de-tenerife"),
+    "cantabria": ("cantabria", "santander", "torrelavega"),
+}
 
 
 class TurijobsSpider:
     source = "turijobs"
 
-    def __init__(self) -> None:
+    def __init__(self, region: str = "canarias") -> None:
+        normalized = region.strip().lower()
+        if normalized not in TURIJOBS_LOCATION_MARKERS:
+            raise ValueError(f"Unsupported Turijobs region: {region}")
+        self.region = normalized
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "Mozilla/5.0"})
 
@@ -34,7 +41,7 @@ class TurijobsSpider:
             raise SpiderError("Turijobs scraper requires playwright to be installed")
         detail_urls = self._fetch_candidate_urls(limit * 3)
         if not detail_urls:
-            raise SpiderError("Turijobs sitemap returned no Canary Islands offers")
+            raise SpiderError(f"Turijobs sitemap returned no {self.region} offers")
 
         records: list[JobRecord] = []
         with sync_playwright() as playwright:
@@ -67,7 +74,7 @@ class TurijobsSpider:
                 continue
             if "/es-es/oferta-trabajo/" not in url:
                 continue
-            if not any(marker in url for marker in TURIJOBS_LOCATION_MARKERS):
+            if not any(marker in url.lower() for marker in TURIJOBS_LOCATION_MARKERS[self.region]):
                 continue
             urls.append(url)
             if len(urls) >= cap:
@@ -121,7 +128,11 @@ class TurijobsSpider:
             update_date=None,
             province=province,
             municipality=municipality,
-            island="Islas Canarias" if "canarias" in (url.lower() + (province or "").lower()) else None,
+            island=(
+                "Islas Canarias"
+                if self.region == "canarias" and "canarias" in (url.lower() + (province or "").lower())
+                else None
+            ),
             raw_location=clean_text(" / ".join(filter(None, [municipality, province]))),
             contract_type=clean_text((features.get("3") or {}).get("label")),
             workday=clean_text((features.get("4") or {}).get("label")),

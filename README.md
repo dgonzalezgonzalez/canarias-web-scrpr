@@ -1,12 +1,14 @@
-# canarias-uni-ml
+# canarias-cantabria-unis-ml
 
-Python pipeline for Canary Islands job postings plus Spanish university degree catalogs and alignment scoring based on text embeddings.
+Python pipeline for Canary Islands and Cantabria job postings plus Spanish university degree catalogs and alignment scoring based on text embeddings.
 
 ## Status
 
 | Surface | Status | Notes |
 |--------|--------|-------|
 | SCE | ✅ Working | API JWT, número de ofertas variable |
+| EMCAN / SNE | ✅ Added | Official Cantabria offer details, no credentials |
+| Trabajo Cantabria | ✅ Added | CEOE-CEPYME Cantabria public listing/details |
 | Turijobs | ✅ Working | Sitemap + detail pages |
 | Indeed (JobSpy) | ✅ Working | Fuente principal para escalado |
 | Geography / contract normalization | ✅ Working | Canonical + raw fields coexist |
@@ -37,6 +39,9 @@ python -m playwright install chromium
 # Scrape jobs
 python -m src.canarias_uni_ml.cli jobs scrape --limit-per-source 50
 
+# Scrape Cantabria (writes cantabria_jobs.csv/.db by default)
+python -m src.canarias_uni_ml.cli jobs scrape --region cantabria --limit-per-source 200
+
 # Build degree catalog from fixture
 python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
 
@@ -59,6 +64,8 @@ Legacy job-only commands still route through compatibility wrapper in `src.canar
 
 - `data/processed/canarias_jobs.csv`
 - `data/processed/canarias_jobs.db`
+- `data/processed/cantabria_jobs.csv`
+- `data/processed/cantabria_jobs.db`
 - `data/processed/degrees_catalog.csv`
 - `data/processed/embeddings_manifest.json`
 - `data/processed/program_job_alignment.db`
@@ -99,6 +106,20 @@ Canonical and raw values both persist:
   - on repeated jobs, updates row only when payload changed; unchanged rows are skipped
 
 Production deployment guide: `docs/operations/remote-nightly-deploy.md`
+
+Cantabria VM command:
+
+```bash
+.venv/bin/python -m src.canarias_uni_ml.cli jobs daemon \
+  --region cantabria \
+  --strategy scrape \
+  --limit-per-source 200 \
+  --window-start 22:00 \
+  --window-end 07:30 \
+  --cooldown-minutes 30
+```
+
+Ready-made unit: `deploy/systemd/cantabria-jobs-daemon.service`. Source rationale, alternatives, and risks: `docs/cantabria-job-sources.md`.
 
 ## Remote run order (safe)
 

@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+from urllib.parse import urljoin, urlsplit
+
+import requests
+from bs4 import BeautifulSoup
+
+from ..models import JobRecord
+from ..utils import clean_text, parse_date
+from .base import SpiderError, SpiderResult
+
+
+TRABAJO_CANTABRIA_LIST_URL = "https://www.trabajocantabria.com/ofertas/"
+SPANISH_MONTHS = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+
+class TrabajoCantabriaSpider:
+    """Public active offers from CEOE-CEPYME Cantabria's placement agency."""
+
+    source = "trabajocantabria"
+
+    def __init__(self, list_url: str = TRABAJO_CANTABRIA_LIST_URL) -> None:
+        self.list_url = list_url
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; canarias-cantabria-unis-ml/1.0; "
+                    "+https://github.com/dgonzalezgonzalez/canarias-cantabria-unis-ml)"
+                )
+            }
+        )
+
+    def fetch(self, limit: int) -> SpiderResult:
+        response = self.session.get(self.list_url, timeout=30)
+        response.raise_for_status()
+        detail_urls = self._parse_listing_links(response.text, response.url)
+        if not detail_urls:
+            raise SpiderError("Trabajo Cantabria returned no active offer links")
+
+        records: list[JobRecord] = []
+        for url in detail_urls:
+            if len(records) >= limit:
+                break
+            try:
+                detail_response = self.session.get(url, timeout=30)
+                detail_response.raise_for_status()
+                record = self._parse_detail(detail_response.text, detail_response.url)
+            except (requests.RequestException, ValueError):
+                continue
+            if record is not None:
+                records.append(record)
+
+        if not records:
+            raise SpiderError("Trabajo Cantabria detail pages could not be parsed")
+        records.sort(key=lambda item: item.publication_date or "", reverse=True)
+        return SpiderResult(source=self.source, records=records[:limit])
+
+    @staticmethod
+    def _parse_listing_links(html: str, base_url: str) -> list[str]:
+        soup = BeautifulSoup(html, "html.parser")
+        urls: list[str] = []
+        for anchor in soup.find_all("a", href=True):
+            absolute = urljoin(base_url, anchor["href"])
+            path = urlsplit(absolute).path.rstrip("/")
+            if re.fullmatch(r"/oferta/[^/]+", path):
+                urls.append(absolute)
+        return list(dict.fromkeys(urls))
+
+    @classmethod
+    def _parse_detail(cls, html: str, source_url: str) -> JobRecord | None:
+        soup = BeautifulSoup(html, "html.parser")
+        title_node = soup.find("h1")
+        title = clean_text(title_node.get_text(" ", strip=True)) if title_node else None
+        if not title:
+            return None
+        lines = [line for raw in soup.get_text("\n", strip=True).splitlines() if (line := clean_text(raw))]
+
+        description = cls._description(lines)
+        location_text = cls._section(lines, "Localidad, Provincia")
+        municipality, province = cls._parse_location(location_text)
+        publication_date = cls._publication_date(lines)
+        vacancies = cls._section(lines, "Vacantes")
+        contract_type = cls._section(lines, "Duración contrato")
+        workday = cls._section(lines, "Tipo de Jornada")
+        salary_text = cls._section(lines, "Salario")
+        external_id = urlsplit(source_url).path.rstrip("/").rsplit("/", 1)[-1]
+
+        return JobRecord(
+            source=cls.source,
+            external_id=external_id,
+            title=title,
+            company=None,
+            description=description,
+            salary_text=salary_text,
+            salary_min=None,
+            salary_max=None,
+            salary_currency="EUR" if salary_text and re.search(r"\b(?:eur|euros?|\u20ac)\b", salary_text, re.I) else None,
+            salary_period=None,
+            publication_date=publication_date,
+            update_date=None,
+            province=province or "Cantabria",
+            municipality=municipality,
+            island=None,
+            raw_location=location_text,
+            contract_type=contract_type,
+            workday=workday,
+            schedule=None,
+            vacancies=vacancies,
+            source_url=source_url,
+            scraped_at=JobRecord.now(),
+        )
+
+    @staticmethod
+    def _norm(value: str) -> str:
+        return "".join(
+            char for char in unicodedata.normalize("NFKD", value.casefold()) if not unicodedata.combining(char)
+        ).strip()
+
+    @classmethod
+    def _section(cls, lines: list[str], label: str) -> str | None:
+        target = cls._norm(label)
+        index = next((i for i, line in enumerate(lines) if cls._norm(line) == target), None)
+        if index is None:
+            return None
+        for line in lines[index + 1 :]:
+            if line not in {"* * *", "---"}:
+                return clean_text(line)
+        return None
+
+    @classmethod
+    def _description(cls, lines: list[str]) -> str | None:
+        start = next((i for i, line in enumerate(lines) if cls._norm(line) == "descripcion"), None)
+        if start is None:
+            return None
+        end_labels = {
+            "localidad, provincia",
+            "nivel formativo y academico minimo",
+            "ambitos de seleccion de candidatos/as",
+            "comparte esta oferta",
+        }
+        values: list[str] = []
+        skip_next_vacancy_value = False
+        for line in lines[start + 1 :]:
+            normalized = cls._norm(line)
+            if normalized in end_labels:
+                break
+            if normalized == "vacantes":
+                skip_next_vacancy_value = True
+                continue
+            if skip_next_vacancy_value and re.fullmatch(r"\d+", line):
+                skip_next_vacancy_value = False
+                continue
+            if line not in {"* * *", "---"}:
+                values.append(line)
+        return clean_text("\n".join(values))
+
+    @classmethod
+    def _publication_date(cls, lines: list[str]) -> str | None:
+        text = next((line for line in lines if cls._norm(line).startswith("publicada:")), None)
+        if not text:
+            text = cls._section(lines, "Fecha inicio inscripciones")
+        if not text:
+            return None
+        numeric = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
+        if numeric:
+            return parse_date(numeric.group(1))
+        match = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", text, re.I)
+        if not match:
+            return None
+        month = SPANISH_MONTHS.get(cls._norm(match.group(2)))
+        if not month:
+            return None
+        return parse_date(f"{int(match.group(1)):02d}/{month:02d}/{int(match.group(3)):04d}")
+
+    @staticmethod
+    def _parse_location(value: str | None) -> tuple[str | None, str | None]:
+        if not value:
+            return None, "Cantabria"
+        parts = [clean_text(part) for part in value.split(",")]
+        parts = [part for part in parts if part]
+        municipality = parts[0].title() if parts else None
+        province = parts[1].title() if len(parts) > 1 else "Cantabria"
+        return municipality, province

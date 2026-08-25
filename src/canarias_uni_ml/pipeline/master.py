@@ -18,6 +18,7 @@ def run_master_pipeline(
     jobs_csv_path: str,
     degrees_csv_path: str,
     alignment_db_path: str,
+    jobs_region: str = "canarias",
 ) -> int:
     if not skip_jobs:
         run_jobs_pipeline(
@@ -25,6 +26,7 @@ def run_master_pipeline(
             output_path=jobs_csv_path,
             max_total=jobs_max_total,
             db_path=str(settings.jobs_db_output),
+            region=jobs_region,
         )
 
     if not skip_degrees:
