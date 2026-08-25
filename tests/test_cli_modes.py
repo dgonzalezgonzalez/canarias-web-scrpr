@@ -17,6 +17,12 @@ def test_cli_jobs_scrape_cantabria_mode():
     assert args.region == "cantabria"
 
 
+def test_cli_jobs_scrape_supports_explicit_sources():
+    parser = build_parser()
+    args = parser.parse_args(["jobs", "scrape", "--region", "cantabria", "--sources", "emcan,trabajocantabria"])
+    assert args.sources == "emcan,trabajocantabria"
+
+
 def test_cli_embed_mode():
     parser = build_parser()
     args = parser.parse_args(["embed", "build", "--provider", "groq", "--dry-run"])
@@ -102,6 +108,7 @@ def test_cli_jobs_compact_mode():
     assert args.domain == "jobs"
     assert args.jobs_command == "compact"
     assert args.db_path == "tmp/jobs.db"
+    assert args.region == "canarias"
 
 
 def test_cli_degrees_description_alias_sets_same_flag():

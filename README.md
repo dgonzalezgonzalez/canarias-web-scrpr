@@ -19,7 +19,7 @@ Python pipeline for Canary Islands and Cantabria job postings plus Spanish unive
 ## Environment Variables
 
 ```bash
-export JOBSPY_PROXIES='["user:pass@host:port"]'   # optional
+# JobSpy is optional; do not use proxies to bypass source controls.
 export OPENAI_API_KEY='sk-...'                      # required for OpenAI embeddings
 export GROQ_API_KEY='...'                           # optional experiments
 export OLLAMA_BASE_URL='http://127.0.0.1:11434'    # local testing provider
@@ -31,16 +31,22 @@ Important: ChatGPT subscription and OpenAI API billing are separate. API usage m
 ## Quickstart
 
 ```bash
+python3 --version  # Python 3.10+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m playwright install chromium
+# Only needed for Turijobs; install OS dependencies under the service user on Linux.
+python -m playwright install --with-deps chromium
 
 # Scrape jobs
 python -m src.canarias_uni_ml.cli jobs scrape --limit-per-source 50
 
 # Scrape Cantabria (writes cantabria_jobs.csv/.db by default)
 python -m src.canarias_uni_ml.cli jobs scrape --region cantabria --limit-per-source 200
+# Policy-safe official-only crawl (recommended default)
+python -m src.canarias_uni_ml.cli jobs scrape --region cantabria --sources emcan --limit-per-source 200
+# Opt into Trabajo Cantabria only after its source terms are cleared
+python -m src.canarias_uni_ml.cli jobs scrape --region cantabria --sources emcan,trabajocantabria --limit-per-source 200
 
 # Build degree catalog from fixture
 python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
@@ -104,6 +110,8 @@ Canonical and raw values both persist:
   - exports snapshot CSV after each cycle (`data/processed/canarias_jobs.csv`)
   - avoids duplicates across nights
   - on repeated jobs, updates row only when payload changed; unchanged rows are skipped
+  - source failures return non-zero and never overwrite the previous CSV snapshot
+  - unchanged successful cycles are healthy; failure thresholds count source failures, not unchanged rows
 
 Production deployment guide: `docs/operations/remote-nightly-deploy.md`
 
@@ -112,11 +120,12 @@ Cantabria VM command:
 ```bash
 .venv/bin/python -m src.canarias_uni_ml.cli jobs daemon \
   --region cantabria \
+  --sources emcan \
   --strategy scrape \
   --limit-per-source 200 \
   --window-start 22:00 \
   --window-end 07:30 \
-  --cooldown-minutes 30
+  --cooldown-minutes 1440
 ```
 
 Ready-made unit: `deploy/systemd/cantabria-jobs-daemon.service`. Source rationale, alternatives, and risks: `docs/cantabria-job-sources.md`.
@@ -137,7 +146,7 @@ sudo systemctl stop canarias-jobs-daemon.service
 
 3. Compact DB (drop logical duplicates, keep latest row per job)
 ```bash
-.venv/bin/python -m src.canarias_uni_ml.cli jobs compact --db-path data/processed/canarias_jobs.db
+.venv/bin/python -m src.canarias_uni_ml.cli jobs compact --region canarias
 ```
 
 4. Preflight one cycle

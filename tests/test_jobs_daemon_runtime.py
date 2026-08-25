@@ -88,7 +88,7 @@ def test_run_jobs_daemon_forwards_region(tmp_path, monkeypatch):
     assert calls[0]["region"] == "cantabria"
 
 
-def test_run_jobs_daemon_exits_on_stagnation_threshold(tmp_path, monkeypatch):
+def test_run_jobs_daemon_keeps_unchanged_successful_cycle_healthy(tmp_path, monkeypatch):
     def fake_run_jobs_pipeline(**kwargs):
         return PipelineOutcome(
             exit_code=0,
@@ -99,6 +99,8 @@ def test_run_jobs_daemon_exits_on_stagnation_threshold(tmp_path, monkeypatch):
             failures=[],
             elapsed_seconds=0.1,
             strategy="scrape",
+            attempted_sources=1,
+            successful_sources=1,
         )
 
     monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline_with_outcome", fake_run_jobs_pipeline)
@@ -114,6 +116,38 @@ def test_run_jobs_daemon_exits_on_stagnation_threshold(tmp_path, monkeypatch):
         lock_path=str(tmp_path / "daemon.lock"),
         stagnation_cycles=1,
         fail_on_stagnation=True,
+        run_once=True,
+    )
+    assert code == 0
+
+
+def test_run_jobs_daemon_exits_after_repeated_source_failure(tmp_path, monkeypatch):
+    def fake_run_jobs_pipeline(**kwargs):
+        return PipelineOutcome(
+            exit_code=1,
+            scraped=0,
+            inserted=0,
+            updated=0,
+            unchanged=0,
+            failures=["emcan: timeout"],
+            elapsed_seconds=0.1,
+            strategy="scrape",
+            attempted_sources=1,
+            successful_sources=0,
+        )
+
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline_with_outcome", fake_run_jobs_pipeline)
+    code = run_jobs_daemon(
+        limit_per_source=5,
+        output_path=str(tmp_path / "jobs.csv"),
+        db_path=str(tmp_path / "jobs.db"),
+        window_start="00:00",
+        window_end="23:59",
+        timezone_name="Europe/Madrid",
+        lock_path=str(tmp_path / "daemon.lock"),
+        stagnation_cycles=1,
+        fail_on_stagnation=True,
+        run_once=True,
     )
     assert code == 3
 

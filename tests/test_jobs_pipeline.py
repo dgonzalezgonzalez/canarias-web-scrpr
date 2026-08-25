@@ -99,6 +99,20 @@ def test_run_jobs_pipeline_continues_when_one_source_fails(tmp_path):
     assert output.exists()
 
 
+def test_run_jobs_pipeline_all_sources_fail_preserves_previous_snapshot(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+    output.write_text("previous\n", encoding="utf-8")
+    exit_code = run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[FailingSpider("emcan"), FailingSpider("trabajocantabria")],
+    )
+    assert exit_code == 1
+    assert output.read_text(encoding="utf-8") == "previous\n"
+
+
 def test_run_jobs_pipeline_with_outcome_reports_updates(tmp_path):
     output = tmp_path / "jobs.csv"
     db_path = tmp_path / "jobs.db"

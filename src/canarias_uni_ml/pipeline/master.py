@@ -19,18 +19,23 @@ def run_master_pipeline(
     degrees_csv_path: str,
     alignment_db_path: str,
     jobs_region: str = "canarias",
+    jobs_db_path: str | None = None,
+    jobs_sources: list[str] | tuple[str, ...] | None = None,
 ) -> int:
     if not skip_jobs:
-        run_jobs_pipeline(
+        jobs_exit = run_jobs_pipeline(
             limit_per_source=jobs_limit_per_source,
             output_path=jobs_csv_path,
             max_total=jobs_max_total,
-            db_path=str(settings.jobs_db_output),
+            db_path=jobs_db_path or str(settings.jobs_db_output),
             region=jobs_region,
+            sources=jobs_sources,
         )
+        if jobs_exit != 0:
+            return jobs_exit
 
     if not skip_degrees:
-        write_degree_catalog(
+        degrees_exit = write_degree_catalog(
             output_path=degrees_csv_path,
             fixture_path=None,
             live_universities=False,
@@ -48,6 +53,8 @@ def run_master_pipeline(
             resolve_university_memory=False,
             db_path=str(settings.degrees_db_output),
         )
+        if degrees_exit != 0:
+            return degrees_exit
 
     return run_alignment_pipeline(
         jobs_csv_path=jobs_csv_path,

@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_scrape.add_argument("--output")
     jobs_scrape.add_argument("--db-path")
     jobs_scrape.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
+    jobs_scrape.add_argument("--sources", help="Comma-separated source names (default: all region sources)")
 
     jobs_scale = jobs_sub.add_parser("scale", help="Scaled scraping run")
     jobs_scale.add_argument("--output")
@@ -56,9 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_daemon.add_argument("--stagnation-cycles", type=int, default=0)
     jobs_daemon.add_argument("--fail-on-stagnation", action="store_true")
     jobs_daemon.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
+    jobs_daemon.add_argument("--sources", help="Comma-separated source names (default: all region sources)")
 
     jobs_compact = jobs_sub.add_parser("compact", help="Compact existing jobs DB to latest logical rows")
     jobs_compact.add_argument("--db-path")
+    jobs_compact.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
 
     degrees = subparsers.add_parser("degrees", help="Degree catalog workflows")
     degrees_sub = degrees.add_subparsers(dest="degrees_command", required=True)
@@ -124,6 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_run.add_argument("--alignment-db")
     pipeline_run.add_argument("--provider", choices=["openai", "groq", "ollama"], default="ollama")
     pipeline_run.add_argument("--model")
+    pipeline_run.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
+    pipeline_run.add_argument("--jobs-sources", help="Comma-separated job source names")
 
     return parser
 
@@ -132,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     settings = Settings.from_env()
+
+    def source_list(value: str | None) -> list[str] | None:
+        if value is None:
+            return None
+        return [item.strip().lower() for item in value.split(",") if item.strip()]
 
     def jobs_path(region: str, kind: str) -> str:
         if region == "canarias":
@@ -152,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_total=args.max_total,
                 db_path=args.db_path or jobs_path(args.region, "db"),
                 region=args.region,
+                sources=source_list(args.sources),
             )
         if args.jobs_command == "scale":
             return run_jobs_scale(
@@ -183,9 +194,10 @@ def main(argv: list[str] | None = None) -> int:
                 stagnation_cycles=args.stagnation_cycles,
                 fail_on_stagnation=args.fail_on_stagnation,
                 region=args.region,
+                sources=source_list(args.sources),
             )
         if args.jobs_command == "compact":
-            repo = JobsRepository(args.db_path or str(settings.jobs_db_output))
+            repo = JobsRepository(args.db_path or jobs_path(args.region, "db"))
             stats = repo.compact_latest_records()
             print(
                 "[done] compacted jobs db before={before} after={after} removed={removed} ambiguous_ties={ties}".format(
@@ -248,9 +260,12 @@ def main(argv: list[str] | None = None) -> int:
             jobs_max_total=args.jobs_max_total,
             provider_name=args.provider,
             model=args.model,
-            jobs_csv_path=args.jobs_csv or str(settings.jobs_output),
+            jobs_csv_path=args.jobs_csv or jobs_path(args.region, "csv"),
             degrees_csv_path=args.degrees_csv or str(settings.degrees_catalog_output),
             alignment_db_path=args.alignment_db or str(settings.alignment_db_output),
+            jobs_region=args.region,
+            jobs_db_path=jobs_path(args.region, "db"),
+            jobs_sources=source_list(args.jobs_sources),
         )
 
     parser.error("Unsupported command")

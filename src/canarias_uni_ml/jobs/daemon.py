@@ -124,6 +124,7 @@ def run_jobs_daemon(
     stagnation_cycles: int = 0,
     fail_on_stagnation: bool = False,
     region: str = "canarias",
+    sources: list[str] | tuple[str, ...] | None = None,
 ) -> int:
     tz = ZoneInfo(timezone_name)
     window = NightWindow(start=parse_hhmm(window_start), end=parse_hhmm(window_end))
@@ -154,7 +155,7 @@ def run_jobs_daemon(
             stagnant_cycles = 0
             while not stop_requested:
                 now = datetime.now(tz)
-                if not window.is_active(now):
+                if not run_once and not window.is_active(now):
                     wait_seconds = min(idle_poll_seconds, window.seconds_until_start(now))
                     print(f"[sleep] outside window; waiting {wait_seconds}s")
                     _sleep_interruptible(wait_seconds, lambda: stop_requested)
@@ -175,6 +176,7 @@ def run_jobs_daemon(
                         max_total=max_total,
                         db_path=db_path,
                         region=region,
+                        sources=sources,
                     )
                 exit_code = outcome.exit_code
                 print(
@@ -188,11 +190,15 @@ def run_jobs_daemon(
                         elapsed=outcome.elapsed_seconds,
                     )
                 )
-                if (outcome.inserted + outcome.updated) == 0:
+                healthy_cycle = outcome.exit_code == 0 and (
+                    outcome.successful_sources > 0
+                    or (outcome.attempted_sources == 0 and outcome.scraped > 0)
+                )
+                if not healthy_cycle:
                     stagnant_cycles += 1
-                    print(f"[warn] non-productive cycle count={stagnant_cycles}")
+                    print(f"[warn] unhealthy source cycle count={stagnant_cycles}")
                     if stagnation_cycles > 0 and stagnant_cycles >= stagnation_cycles:
-                        print(f"[warn] stagnation threshold reached ({stagnation_cycles})")
+                        print(f"[warn] failure threshold reached ({stagnation_cycles})")
                         if fail_on_stagnation:
                             print("[error] exiting non-zero to allow supervisor restart")
                             return 3

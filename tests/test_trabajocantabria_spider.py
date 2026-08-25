@@ -49,9 +49,15 @@ def test_trabajocantabria_detail_parser_keeps_functions_and_conditions():
     assert record.province == "Cantabria"
     assert "Registro de facturas" in record.description
     assert "Contrato estable" in record.description
+    assert "Nivel Formativo" in record.description
     assert record.vacancies == "1"
     assert record.contract_type == "Indefinido"
     assert record.workday == "Intensiva/Continua"
+
+
+def test_trabajocantabria_scalar_section_does_not_consume_next_heading():
+    lines = ["Salario", "Tipo de Jornada", "Continua"]
+    assert TrabajoCantabriaSpider._section(lines, "Salario") is None
 
 
 def test_trabajocantabria_numeric_date_is_day_first():

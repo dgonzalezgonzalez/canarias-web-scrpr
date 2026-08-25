@@ -111,7 +111,7 @@ class TrabajoCantabriaSpider:
             salary_text=salary_text,
             salary_min=None,
             salary_max=None,
-            salary_currency="EUR" if salary_text and re.search(r"\b(?:eur|euros?|\u20ac)\b", salary_text, re.I) else None,
+            salary_currency="EUR" if salary_text and re.search(r"(?:\beur\b|\beuros?\b|\u20ac)", salary_text, re.I) else None,
             salary_period=None,
             publication_date=publication_date,
             update_date=None,
@@ -139,8 +139,26 @@ class TrabajoCantabriaSpider:
         index = next((i for i, line in enumerate(lines) if cls._norm(line) == target), None)
         if index is None:
             return None
+        known_labels = {
+            cls._norm(item)
+            for item in {
+                "Descripción",
+                "Vacantes",
+                "Localidad, Provincia",
+                "Nivel Formativo y Académico mínimo",
+                "Permisos de conducir",
+                "Vehículo propio",
+                "Duración contrato",
+                "Tipo de Jornada",
+                "Salario",
+                "Ámbitos de selección de candidatos/as",
+                "Comparte esta oferta",
+            }
+        }
         for line in lines[index + 1 :]:
             if line not in {"* * *", "---"}:
+                if cls._norm(line) in known_labels:
+                    return None
                 return clean_text(line)
         return None
 
@@ -169,7 +187,17 @@ class TrabajoCantabriaSpider:
                 continue
             if line not in {"* * *", "---"}:
                 values.append(line)
-        return clean_text("\n".join(values))
+        structured: list[str] = []
+        for label in (
+            "Nivel Formativo y Académico mínimo",
+            "Permisos de conducir",
+            "Vehículo propio",
+            "Ámbitos de selección de candidatos/as",
+        ):
+            value = cls._section(lines, label)
+            if value:
+                structured.append(f"{label}: {value}")
+        return clean_text("\n".join([*values, *structured]))
 
     @classmethod
     def _publication_date(cls, lines: list[str]) -> str | None:

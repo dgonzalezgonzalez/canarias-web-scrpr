@@ -76,6 +76,10 @@ class EmcanSpider:
             visited_pages.add(page_url)
             response = self.session.get(page_url, timeout=30)
             response.raise_for_status()
+            if self._is_session_cancelled(response.text):
+                raise SpiderError(
+                    "EMCAN/SNE cancelled the search session; retry the crawl with a fresh session"
+                )
             details, pages = self._parse_listing_links(response.text, response.url)
             for detail_url in details:
                 stable_key = self._offer_id_from_url(detail_url) or detail_url
@@ -105,18 +109,44 @@ class EmcanSpider:
                 if offer_id and offer_id.startswith("06"):
                     detail_urls.append(absolute)
                 continue
-            if "busquedaOfertas.do" not in absolute:
-                continue
-            lowered = absolute.lower()
             anchor_text = clean_text(anchor.get_text(" ", strip=True)) or ""
-            if (
+            if not cls._is_pagination_link(absolute, anchor_text=anchor_text):
+                continue
+            page_urls.append(absolute)
+        return list(dict.fromkeys(detail_urls)), list(dict.fromkeys(page_urls))
+
+    @staticmethod
+    def _is_pagination_link(url: str, *, anchor_text: str = "") -> bool:
+        """Recognize both legacy and current SNE result-page URLs.
+
+        Current SNE pages use ``listadoOfertas.do?idFlujo=...&indice=41&modo=pagina``;
+        older fixtures and deployments used ``busquedaOfertas.do?...pagina=2``.
+        Keep the full query string, including the transient ``idFlujo`` token, for
+        requests made during one crawl.
+        """
+        parsed = urlsplit(url)
+        path = parsed.path.lower()
+        query = parse_qs(parsed.query)
+        lowered = url.lower()
+        text = (anchor_text or "").strip().lower()
+        if path.endswith("listadoofertas.do"):
+            return query.get("modo", [""])[0].lower() == "pagina" and bool(query.get("indice"))
+        if path.endswith("busquedaofertas.do"):
+            return (
                 "pagina" in lowered
                 or "navegacion" in lowered
-                or anchor_text.isdigit()
-                or anchor_text.lower() in {"siguiente", ">", ">>"}
-            ):
-                page_urls.append(absolute)
-        return list(dict.fromkeys(detail_urls)), list(dict.fromkeys(page_urls))
+                or text.isdigit()
+                or text in {"siguiente", ">", ">>"}
+            )
+        return False
+
+    @staticmethod
+    def _is_session_cancelled(html: str) -> bool:
+        lowered = clean_text(BeautifulSoup(html, "html.parser").get_text(" ", strip=True))
+        if not lowered:
+            return False
+        lowered = lowered.casefold()
+        return "sesión cancelada" in lowered or "sesion cancelada" in lowered or "session cancelled" in lowered
 
     @classmethod
     def _parse_detail(cls, html: str, source_url: str) -> JobRecord | None:
@@ -136,6 +166,26 @@ class EmcanSpider:
             "Datos adicionales",
             {"Datos de contacto", "Requerimientos", "Requeridos/Deseables", "Nivel Profesional buscado"},
         )
+        requirements = cls._section(
+            lines,
+            "Requerimientos",
+            {
+                "Datos de contacto",
+                "Datos adicionales",
+                "Descripción",
+                "Datos",
+                "Nivel Profesional buscado",
+                "Permisos de conducir",
+            },
+        )
+        if requirements:
+            safe_lines = [
+                line
+                for line in requirements.splitlines()
+                if not re.search(r"(?:tel[eé]fono|correo|email|@|www\.|http)", line, re.I)
+            ]
+            if safe_lines:
+                description = "\n".join(filter(None, [description, "Requerimientos:", *safe_lines]))
         if not title:
             return None
 
@@ -149,7 +199,6 @@ class EmcanSpider:
             municipality = clean_text(location_match.group(1))
 
         publication_date = cls._label_value(lines, "Fecha de inicio")
-        update_date = cls._label_value(lines, "Fecha de fin")
         salary_text = cls._sentence_value(description, r"\bsalario\s*[:\-]?\s*([^\n.]+)")
         contract_type = cls._sentence_value(
             description,
@@ -173,7 +222,10 @@ class EmcanSpider:
             salary_currency="EUR" if salary_text else None,
             salary_period=None,
             publication_date=parse_date(publication_date),
-            update_date=parse_date(update_date),
+            # SNE's "Fecha de fin" is the application/diffusion deadline, not a
+            # last-modified timestamp. Keep update_date empty until a dedicated
+            # closing_date field is introduced in the shared schema.
+            update_date=None,
             province="Cantabria",
             municipality=municipality,
             island=None,

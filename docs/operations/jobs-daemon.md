@@ -50,10 +50,11 @@ Stop daemon first, then compact DB in place:
 
 This keeps one latest logical row per job and removes stale duplicates.
 
-## Stagnation Detection
+## Source health
 
-- A non-productive cycle is `inserted + updated == 0`.
-- `--stagnation-cycles N` counts consecutive non-productive cycles.
+- A healthy cycle means at least one selected source returned records and the pipeline completed successfully.
+- Unchanged rows are expected and do not count as failure.
+- `--stagnation-cycles N` counts consecutive unhealthy source cycles.
 - With `--fail-on-stagnation`, daemon exits non-zero at threshold so `systemd` restarts it.
 
 ## Throughput Tuning

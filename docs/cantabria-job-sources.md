@@ -79,12 +79,13 @@ Recommended future command: a separate `jobs history --source santander-open-dat
 ## Operational and compliance notes
 
 - Fetch only public pages; no login, candidate profiles, applications, cookies, or personal accounts.
+- The production systemd unit enables EMCAN only (`--sources emcan`). Trabajo Cantabria is an explicit opt-in source until its reproduction/transformation terms have written permission or legal sign-off.
+- Use `--sources emcan,trabajocantabria` only after that review; the CLI keeps source selection explicit so an operator can document the approved set.
 - Default concurrency remains one worker per source. Each local spider requests detail pages sequentially with 30-second timeouts.
-- Keep nightly cadence and persistent deduplication. Do not hammer sources to manufacture volume.
+- Keep one complete nightly crawl (the Cantabria unit uses a 24-hour cooldown) and persistent deduplication. Do not hammer sources to manufacture volume.
 - Re-check each source's current terms and `robots.txt` from the deployment VM before production; this research environment could inspect indexed public content but could not directly retrieve every robots endpoint.
 - Contact instructions can contain public emails. The EMCAN parser intentionally excludes `Datos de contacto` from the normalized description because occupation analysis does not need it.
 
 ## GitHub-code review
 
 Searches found older generic InfoJobs scrapers (for example `ander-elkoroaristizabal/InfojobsScraper`) but no maintained open-source scraper specifically for EMCAN, Trabajo Cantabria, or the Santander open-data endpoint. Existing InfoJobs HTML examples are less suitable than the official API. Implementation therefore reuses this repository's `JobRecord`, storage, cleanup, daemon, and failure-isolation patterns instead of importing an unmaintained scraper.
-

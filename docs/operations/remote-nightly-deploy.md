@@ -43,14 +43,44 @@ cd canarias-uni-ml
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m playwright install chromium
+python -m playwright install --with-deps chromium  # only if enabling Turijobs
 ```
 
 Set required env vars in service environment (or `.env`):
 
 - `INFOJOBS_CLIENT_ID`
 - `INFOJOBS_CLIENT_SECRET`
-- optional proxy variables for JobSpy/Indeed
+- Do not configure proxies to bypass source controls; JobSpy and Turijobs are optional.
+
+## Cantabria VM (recommended path)
+
+Use the renamed repository and region-specific paths:
+
+```bash
+git clone https://github.com/dgonzalezgonzalez/canarias-cantabria-unis-ml.git
+cd canarias-cantabria-unis-ml
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Official EMCAN-only preflight (the shipped systemd unit uses the same source set)
+.venv/bin/python -m src.canarias_uni_ml.cli jobs scrape \
+  --region cantabria --sources emcan --limit-per-source 200
+
+# Optional local board, only after its terms are cleared
+.venv/bin/python -m src.canarias_uni_ml.cli jobs scrape \
+  --region cantabria --sources emcan,trabajocantabria --limit-per-source 200
+
+.venv/bin/python -m src.canarias_uni_ml.cli jobs compact --region cantabria
+sudo cp deploy/systemd/cantabria-jobs-daemon.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cantabria-jobs-daemon.service
+```
+
+The Cantabria unit writes `data/processed/cantabria_jobs.db` and
+`data/processed/cantabria_jobs.csv`, runs one complete cycle per nightly window,
+and restarts only after a failed source-health threshold. EMCAN is enabled by
+default; add `--sources trabajocantabria` only after documenting permission.
 
 ## 2) Preflight check (mandatory)
 
@@ -118,9 +148,9 @@ sudo journalctl -u canarias-jobs-daemon.service -f
 sudo systemctl stop canarias-jobs-daemon.service
 ```
 
-Watch for stagnation signals:
-- repeated `[warn] non-productive cycle`
-- `[warn] stagnation threshold reached`
+Watch for source-health signals:
+- repeated `[warn] unhealthy source cycle`
+- `[warn] failure threshold reached`
 - `[error] exiting non-zero to allow supervisor restart`
 
 ## 6) Git flow

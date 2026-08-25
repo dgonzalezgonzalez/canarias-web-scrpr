@@ -41,6 +41,25 @@ def test_emcan_listing_keeps_only_cantabria_and_pagination():
     assert len(pages) == 1
 
 
+def test_emcan_listing_accepts_current_listado_pagination_shape():
+    html = """
+    <a href="detalleOferta.do?id=062026002090">Oferta</a>
+    <a href="listadoOfertas.do?idFlujo=flow-123&indice=41&modo=pagina">2</a>
+    """
+    details, pages = EmcanSpider._parse_listing_links(
+        html,
+        "https://www.sistemanacionalempleo.es/OfertaDifusionWEB/busquedaOfertas.do",
+    )
+    assert len(details) == 1
+    assert pages == [
+        "https://www.sistemanacionalempleo.es/OfertaDifusionWEB/listadoOfertas.do?idFlujo=flow-123&indice=41&modo=pagina"
+    ]
+
+
+def test_emcan_session_cancelled_page_is_detected():
+    assert EmcanSpider._is_session_cancelled("<html>Sesión Cancelada</html>") is True
+
+
 def test_emcan_detail_parser_extracts_occupation_and_full_description():
     record = EmcanSpider._parse_detail(
         DETAIL_HTML,
@@ -54,6 +73,7 @@ def test_emcan_detail_parser_extracts_occupation_and_full_description():
     assert record.municipality == "PIELAGOS"
     assert record.province == "Cantabria"
     assert record.publication_date == "2026-06-19T00:00:00"
+    assert record.update_date is None
     assert record.contract_type == "INDEFINIDO"
     assert record.workday == "PARCIAL DE 20H"
     assert record.vacancies == "1"
