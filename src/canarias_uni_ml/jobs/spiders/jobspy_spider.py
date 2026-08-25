@@ -28,11 +28,33 @@ CANARY_ISLANDS_LOCATIONS = [
     "San Cristóbal de La Laguna",
 ]
 
+CANTABRIA_LOCATIONS = [
+    "Cantabria, Spain",
+    "Santander, Cantabria",
+    "Torrelavega, Cantabria",
+    "Camargo, Cantabria",
+    "Castro-Urdiales, Cantabria",
+    "Laredo, Cantabria",
+    "Piélagos, Cantabria",
+    "El Astillero, Cantabria",
+    "Santa Cruz de Bezana, Cantabria",
+    "Los Corrales de Buelna, Cantabria",
+]
+
+REGION_LOCATIONS = {
+    "canarias": CANARY_ISLANDS_LOCATIONS,
+    "cantabria": CANTABRIA_LOCATIONS,
+}
+
 
 class JobspySpider:
     source = "jobspy"
 
-    def __init__(self) -> None:
+    def __init__(self, region: str = "canarias") -> None:
+        normalized = region.strip().lower()
+        if normalized not in REGION_LOCATIONS:
+            raise ValueError(f"Unsupported JobSpy region: {region}")
+        self.region = normalized
         self._jobspy = None
 
     def _get_jobspy(self):
@@ -50,7 +72,7 @@ class JobspySpider:
         scrape_jobs = self._get_jobspy()
         records: list[JobRecord] = []
 
-        for location in CANARY_ISLANDS_LOCATIONS:
+        for location in REGION_LOCATIONS[self.region]:
             if len(records) >= limit:
                 break
 
@@ -80,7 +102,7 @@ class JobspySpider:
                     records.append(record)
 
         if not records:
-            raise SpiderError("JobSpy found no jobs in Canary Islands")
+            raise SpiderError(f"JobSpy found no jobs in {self.region}")
         return SpiderResult(source=self.source, records=records[:limit])
 
     def _convert_row_to_record(self, row) -> JobRecord | None:
@@ -111,9 +133,9 @@ class JobspySpider:
                 salary_text = f"{salary_min} {salary_period or ''}"
 
         location = clean_text(row.get("location")) or ""
-        province = self._extract_province(location)
+        province = self._extract_province(location, self.region)
         municipality = self._extract_municipality(location, province)
-        island = self._extract_island(location)
+        island = self._extract_island(location) if self.region == "canarias" else None
 
         site = clean_text(row.get("site")) or "unknown"
 
@@ -203,8 +225,10 @@ class JobspySpider:
         return interval
 
     @staticmethod
-    def _extract_province(location: str) -> str | None:
+    def _extract_province(location: str, region: str = "canarias") -> str | None:
         location_lower = location.lower()
+        if region == "cantabria":
+            return "Cantabria" if location_lower else None
         if "santa cruz" in location_lower or "tenerife" in location_lower:
             return "Santa Cruz de Tenerife"
         if "las palmas" in location_lower or "gran canaria" in location_lower or "lanzarote" in location_lower or "fuerteventura" in location_lower:

@@ -10,6 +10,7 @@ from .degrees.catalog import write_degree_catalog
 from .embeddings.pipeline import run_embedding_pipeline
 from .jobs.daemon import run_jobs_daemon
 from .jobs.pipeline import run_jobs_pipeline, run_jobs_scale
+from .jobs.regions import SUPPORTED_REGIONS
 from .jobs.storage import JobsRepository
 from .pipeline.master import run_master_pipeline
 
@@ -27,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_scrape.add_argument("--max-total", type=int)
     jobs_scrape.add_argument("--output")
     jobs_scrape.add_argument("--db-path")
+    jobs_scrape.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
 
     jobs_scale = jobs_sub.add_parser("scale", help="Scaled scraping run")
     jobs_scale.add_argument("--output")
@@ -53,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_daemon.add_argument("--time-limit-minutes", type=int, default=45)
     jobs_daemon.add_argument("--stagnation-cycles", type=int, default=0)
     jobs_daemon.add_argument("--fail-on-stagnation", action="store_true")
+    jobs_daemon.add_argument("--region", choices=SUPPORTED_REGIONS, default="canarias")
 
     jobs_compact = jobs_sub.add_parser("compact", help="Compact existing jobs DB to latest logical rows")
     jobs_compact.add_argument("--db-path")
@@ -130,13 +133,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = Settings.from_env()
 
+    def jobs_path(region: str, kind: str) -> str:
+        if region == "canarias":
+            configured = {
+                "csv": settings.jobs_output,
+                "db": settings.jobs_db_output,
+                "lock": settings.jobs_daemon_lock,
+            }
+            return str(configured[kind])
+        suffix = {"csv": "csv", "db": "db", "lock": "lock"}[kind]
+        return str(settings.processed_dir / f"{region}_jobs.{suffix}")
+
     if args.domain == "jobs":
         if args.jobs_command == "scrape":
             return run_jobs_pipeline(
                 limit_per_source=args.limit_per_source,
-                output_path=args.output or str(settings.jobs_output),
+                output_path=args.output or jobs_path(args.region, "csv"),
                 max_total=args.max_total,
-                db_path=args.db_path or str(settings.jobs_db_output),
+                db_path=args.db_path or jobs_path(args.region, "db"),
+                region=args.region,
             )
         if args.jobs_command == "scale":
             return run_jobs_scale(
@@ -149,10 +164,12 @@ def main(argv: list[str] | None = None) -> int:
                 sce_only=args.sce_only,
             )
         if args.jobs_command == "daemon":
+            if args.region != "canarias" and args.strategy == "scale":
+                parser.error("jobs daemon --strategy scale currently supports only --region canarias")
             return run_jobs_daemon(
                 limit_per_source=args.limit_per_source,
-                output_path=args.output or str(settings.jobs_output),
-                db_path=args.db_path or str(settings.jobs_db_output),
+                output_path=args.output or jobs_path(args.region, "csv"),
+                db_path=args.db_path or jobs_path(args.region, "db"),
                 max_total=args.max_total,
                 window_start=args.window_start,
                 window_end=args.window_end,
@@ -160,11 +177,12 @@ def main(argv: list[str] | None = None) -> int:
                 cooldown_minutes=args.cooldown_minutes,
                 idle_poll_seconds=args.idle_poll_seconds,
                 run_once=args.run_once,
-                lock_path=args.lock_path or str(settings.jobs_daemon_lock),
+                lock_path=args.lock_path or jobs_path(args.region, "lock"),
                 strategy=args.strategy,
                 time_limit_minutes=args.time_limit_minutes,
                 stagnation_cycles=args.stagnation_cycles,
                 fail_on_stagnation=args.fail_on_stagnation,
+                region=args.region,
             )
         if args.jobs_command == "compact":
             repo = JobsRepository(args.db_path or str(settings.jobs_db_output))

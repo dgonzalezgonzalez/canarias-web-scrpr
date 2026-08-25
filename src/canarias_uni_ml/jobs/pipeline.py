@@ -10,8 +10,9 @@ from typing import Iterable
 from .degree_mapping import annotate_job_degree_targets
 from .scale import _clean_record
 from .models import JobRecord
+from .regions import default_spiders
 from .scale import run_scaled
-from .spiders import JobspySpider, SCESpider, SpiderError, TurijobsSpider
+from .spiders import SpiderError
 from .storage import JobsRepository
 
 PROCESSED_DIR = Path("data/processed")
@@ -103,6 +104,7 @@ def run_jobs_pipeline(
     max_total: int | None = None,
     db_path: str | None = None,
     spiders: list[object] | None = None,
+    region: str = "canarias",
 ) -> int:
     outcome = run_jobs_pipeline_with_outcome(
         limit_per_source=limit_per_source,
@@ -110,6 +112,7 @@ def run_jobs_pipeline(
         max_total=max_total,
         db_path=db_path,
         spiders=spiders,
+        region=region,
     )
     return outcome.exit_code
 
@@ -120,9 +123,10 @@ def run_jobs_pipeline_with_outcome(
     max_total: int | None = None,
     db_path: str | None = None,
     spiders: list[object] | None = None,
+    region: str = "canarias",
 ) -> PipelineOutcome:
     start = time.time()
-    spiders = spiders or [SCESpider(), TurijobsSpider(), JobspySpider()]
+    spiders = spiders or default_spiders(region)
     all_records, failures = _collect_records(spiders, limit_per_source)
 
     cleaned_records = [cleaned for record in all_records if (cleaned := _clean_record(record)) is not None]

@@ -123,6 +123,7 @@ def run_jobs_daemon(
     time_limit_minutes: int = 45,
     stagnation_cycles: int = 0,
     fail_on_stagnation: bool = False,
+    region: str = "canarias",
 ) -> int:
     tz = ZoneInfo(timezone_name)
     window = NightWindow(start=parse_hhmm(window_start), end=parse_hhmm(window_end))
@@ -173,6 +174,7 @@ def run_jobs_daemon(
                         output_path=output_path,
                         max_total=max_total,
                         db_path=db_path,
+                        region=region,
                     )
                 exit_code = outcome.exit_code
                 print(

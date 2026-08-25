@@ -8,6 +8,13 @@ def test_cli_jobs_scrape_mode():
     assert args.jobs_command == "scrape"
     assert args.limit_per_source == 10
     assert args.max_total == 10
+    assert args.region == "canarias"
+
+
+def test_cli_jobs_scrape_cantabria_mode():
+    parser = build_parser()
+    args = parser.parse_args(["jobs", "scrape", "--region", "cantabria"])
+    assert args.region == "cantabria"
 
 
 def test_cli_embed_mode():

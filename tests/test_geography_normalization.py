@@ -10,6 +10,13 @@ def test_normalize_geography_alias():
     assert result.province == "Las Palmas"
 
 
+def test_normalize_cantabria_municipality_has_no_island():
+    result = normalize_geography(None, "PIELAGOS", None, "PIELAGOS / Cantabria")
+    assert result.municipality == "Piélagos"
+    assert result.island is None
+    assert result.province == "Cantabria"
+
+
 def test_clean_record_normalizes_geography_and_contract():
     record = JobRecord(
         source="jobspy_indeed",
