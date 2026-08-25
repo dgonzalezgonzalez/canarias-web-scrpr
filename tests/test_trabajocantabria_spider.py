@@ -52,3 +52,8 @@ def test_trabajocantabria_detail_parser_keeps_functions_and_conditions():
     assert record.vacancies == "1"
     assert record.contract_type == "Indefinido"
     assert record.workday == "Intensiva/Continua"
+
+
+def test_trabajocantabria_numeric_date_is_day_first():
+    lines = ["Fecha inicio inscripciones", "12/08/2026"]
+    assert TrabajoCantabriaSpider._publication_date(lines) == "2026-08-12T00:00:00"

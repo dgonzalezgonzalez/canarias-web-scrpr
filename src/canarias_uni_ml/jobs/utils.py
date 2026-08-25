@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -36,12 +37,18 @@ def clean_text(value: object) -> str | None:
 
 
 def parse_date(value: str | None) -> str | None:
-    if not value:
+    cleaned = clean_text(value)
+    if not cleaned:
         return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[T ][0-9:.+-]+Z?)?", cleaned):
+        try:
+            return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).isoformat()
+        except ValueError:
+            pass
     try:
-        return date_parser.parse(value, dayfirst=True, fuzzy=True).isoformat()
+        return date_parser.parse(cleaned, dayfirst=True, fuzzy=True).isoformat()
     except (ValueError, TypeError, OverflowError):
-        return clean_text(value)
+        return cleaned
 
 
 def infer_province_from_island(island: str | None) -> str | None:

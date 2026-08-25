@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
 from urllib.parse import urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 
 from ..models import JobRecord
-from ..utils import clean_text, parse_date
+from ..utils import clean_text
 from .base import SpiderError, SpiderResult
 
 
@@ -179,14 +180,20 @@ class TrabajoCantabriaSpider:
             return None
         numeric = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
         if numeric:
-            return parse_date(numeric.group(1))
+            try:
+                return datetime.strptime(numeric.group(1), "%d/%m/%Y").isoformat()
+            except ValueError:
+                return None
         match = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", text, re.I)
         if not match:
             return None
         month = SPANISH_MONTHS.get(cls._norm(match.group(2)))
         if not month:
             return None
-        return parse_date(f"{int(match.group(1)):02d}/{month:02d}/{int(match.group(3)):04d}")
+        try:
+            return datetime(int(match.group(3)), month, int(match.group(1))).isoformat()
+        except ValueError:
+            return None
 
     @staticmethod
     def _parse_location(value: str | None) -> tuple[str | None, str | None]:
