@@ -212,6 +212,8 @@ def _clean_record(record: JobRecord) -> JobRecord | None:
         salary_period=clean_text(record.salary_period),
         publication_date=parse_date(record.publication_date),
         update_date=parse_date(record.update_date),
+        closing_date=parse_date(record.closing_date),
+        is_active=_coerce_active(record.is_active),
         province=geography.province,
         province_raw=clean_text(record.province),
         municipality=geography.municipality,
@@ -227,6 +229,14 @@ def _clean_record(record: JobRecord) -> JobRecord | None:
         source_url=clean_text(record.source_url) or "",
         scraped_at=record.scraped_at,
     )
+
+
+def _coerce_active(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return True
+    return str(value).strip().casefold() not in {"", "0", "false", "no", "off"}
 
 
 def _clean_and_dedupe(records: list[JobRecord], max_total: int) -> list[JobRecord]:

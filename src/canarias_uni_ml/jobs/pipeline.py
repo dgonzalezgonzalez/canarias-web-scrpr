@@ -13,6 +13,7 @@ from .models import JobRecord
 from .regions import default_spiders
 from .scale import run_scaled
 from .spiders import SpiderError
+from .spiders.base import SpiderResult
 from .storage import JobsRepository
 
 PROCESSED_DIR = Path("data/processed")
@@ -89,11 +90,12 @@ def _select_with_source_coverage(records: list[JobRecord], max_total: int | None
 
 def _collect_records(
     spiders: Iterable[object], limit_per_source: int
-) -> tuple[list[JobRecord], list[str], int, int]:
+) -> tuple[list[JobRecord], list[str], int, int, list[SpiderResult]]:
     all_records: list[JobRecord] = []
     failures: list[str] = []
     attempted_sources = 0
     successful_sources = 0
+    successful_results: list[SpiderResult] = []
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(spider.fetch, limit_per_source): spider.source for spider in spiders}
         attempted_sources = len(futures)
@@ -106,6 +108,7 @@ def _collect_records(
                     print(f"[skip] {source}: returned no records")
                     continue
                 successful_sources += 1
+                successful_results.append(result)
                 all_records.extend(result.records)
                 print(f"[ok] {source}: {len(result.records)} records")
             except SpiderError as exc:
@@ -114,7 +117,7 @@ def _collect_records(
             except Exception as exc:  # pragma: no cover
                 failures.append(f"{source}: {exc}")
                 print(f"[error] {source}: {exc}")
-    return all_records, failures, attempted_sources, successful_sources
+    return all_records, failures, attempted_sources, successful_sources, successful_results
 
 
 def run_jobs_pipeline(
@@ -149,7 +152,9 @@ def run_jobs_pipeline_with_outcome(
 ) -> PipelineOutcome:
     start = time.time()
     spiders = spiders or default_spiders(region, sources=sources)
-    all_records, failures, attempted_sources, successful_sources = _collect_records(spiders, limit_per_source)
+    all_records, failures, attempted_sources, successful_sources, successful_results = _collect_records(
+        spiders, limit_per_source
+    )
 
     if successful_sources == 0:
         print("[error] no job source completed successfully; keeping previous CSV snapshot")
@@ -186,6 +191,18 @@ def run_jobs_pipeline_with_outcome(
     mapped_records = annotate_job_degree_targets(output_records)
     repo = JobsRepository(db_path or default_jobs_db(region))
     stats = repo.upsert_records(mapped_records)
+    # Deactivate only records from a source that explicitly reported a complete
+    # snapshot. Best-effort/capped sources (JobSpy, Turijobs) never erase data.
+    for result in successful_results:
+        if not getattr(result, "complete", True):
+            continue
+        source_records = [
+            record
+            for record in cleaned_records
+            if record.source == result.source
+        ]
+        if source_records:
+            repo.deactivate_missing_source(result.source, source_records)
     written = repo.export_csv(output_path)
     print(
         "[done] wrote {written} rows to {output} (inserted={inserted}, updated={updated}, unchanged={unchanged})".format(

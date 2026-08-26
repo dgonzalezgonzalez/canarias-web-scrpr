@@ -99,6 +99,8 @@ Canonical and raw values both persist:
 - `province`, `municipality`, `island`, `contract_type`: canonical values
 - `province_raw`, `municipality_raw`, `island_raw`, `contract_type_raw`: original scraped values
 - `raw_location`: original free-text location
+- `publication_date`, `update_date`, `closing_date`: lifecycle dates when the source publishes them
+- `is_active`: current-snapshot flag; inactive history remains in SQLite but is omitted from the exported CSV
 
 ## Nightly Daemon
 
@@ -110,6 +112,8 @@ Canonical and raw values both persist:
   - exports snapshot CSV after each cycle (`data/processed/canarias_jobs.csv`)
   - avoids duplicates across nights
   - on repeated jobs, updates row only when payload changed; unchanged rows are skipped
+  - exports only active rows; complete source snapshots deactivate offers no longer returned
+  - capped/best-effort sources never deactivate missing rows
   - source failures return non-zero and never overwrite the previous CSV snapshot
   - unchanged successful cycles are healthy; failure thresholds count source failures, not unchanged rows
 

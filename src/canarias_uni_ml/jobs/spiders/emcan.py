@@ -55,12 +55,18 @@ class EmcanSpider:
                 continue
             if record is not None:
                 records.append(record)
+            else:
+                failures.append(f"unparseable detail: {detail_url}")
 
         if not records:
             suffix = f"; first error: {failures[0]}" if failures else ""
             raise SpiderError(f"EMCAN/SNE detail pages could not be parsed{suffix}")
         records.sort(key=lambda item: item.publication_date or "", reverse=True)
-        return SpiderResult(source=self.source, records=records[:limit])
+        return SpiderResult(
+            source=self.source,
+            records=records[:limit],
+            complete=len(detail_urls) < limit and not failures,
+        )
 
     def _fetch_detail_urls(self, limit: int) -> list[str]:
         pending = deque([self.search_url])
@@ -199,6 +205,7 @@ class EmcanSpider:
             municipality = clean_text(location_match.group(1))
 
         publication_date = cls._label_value(lines, "Fecha de inicio")
+        closing_date = cls._label_value(lines, "Fecha de fin")
         salary_text = cls._sentence_value(description, r"\bsalario\s*[:\-]?\s*([^\n.]+)")
         contract_type = cls._sentence_value(
             description,
@@ -223,9 +230,9 @@ class EmcanSpider:
             salary_period=None,
             publication_date=parse_date(publication_date),
             # SNE's "Fecha de fin" is the application/diffusion deadline, not a
-            # last-modified timestamp. Keep update_date empty until a dedicated
-            # closing_date field is introduced in the shared schema.
+            # last-modified timestamp. Keep it separate from the closing date.
             update_date=None,
+            closing_date=parse_date(closing_date),
             province="Cantabria",
             municipality=municipality,
             island=None,

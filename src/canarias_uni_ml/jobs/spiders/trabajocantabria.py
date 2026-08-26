@@ -55,6 +55,7 @@ class TrabajoCantabriaSpider:
             raise SpiderError("Trabajo Cantabria returned no active offer links")
 
         records: list[JobRecord] = []
+        detail_failures = 0
         for url in detail_urls:
             if len(records) >= limit:
                 break
@@ -63,6 +64,7 @@ class TrabajoCantabriaSpider:
                 detail_response.raise_for_status()
                 record = self._parse_detail(detail_response.text, detail_response.url)
             except (requests.RequestException, ValueError):
+                detail_failures += 1
                 continue
             if record is not None:
                 records.append(record)
@@ -70,7 +72,11 @@ class TrabajoCantabriaSpider:
         if not records:
             raise SpiderError("Trabajo Cantabria detail pages could not be parsed")
         records.sort(key=lambda item: item.publication_date or "", reverse=True)
-        return SpiderResult(source=self.source, records=records[:limit])
+        return SpiderResult(
+            source=self.source,
+            records=records[:limit],
+            complete=len(detail_urls) < limit and detail_failures == 0,
+        )
 
     @staticmethod
     def _parse_listing_links(html: str, base_url: str) -> list[str]:
@@ -96,6 +102,7 @@ class TrabajoCantabriaSpider:
         location_text = cls._section(lines, "Localidad, Provincia")
         municipality, province = cls._parse_location(location_text)
         publication_date = cls._publication_date(lines)
+        closing_date = cls._section(lines, "Fecha fin inscripciones")
         vacancies = cls._section(lines, "Vacantes")
         contract_type = cls._section(lines, "Duración contrato")
         workday = cls._section(lines, "Tipo de Jornada")
@@ -115,6 +122,7 @@ class TrabajoCantabriaSpider:
             salary_period=None,
             publication_date=publication_date,
             update_date=None,
+            closing_date=cls._parse_date_value(closing_date),
             province=province or "Cantabria",
             municipality=municipality,
             island=None,
@@ -151,6 +159,8 @@ class TrabajoCantabriaSpider:
                 "Duración contrato",
                 "Tipo de Jornada",
                 "Salario",
+                "Fecha inicio inscripciones",
+                "Fecha fin inscripciones",
                 "Ámbitos de selección de candidatos/as",
                 "Comparte esta oferta",
             }
@@ -213,6 +223,27 @@ class TrabajoCantabriaSpider:
             except ValueError:
                 return None
         match = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", text, re.I)
+        if not match:
+            return None
+        month = SPANISH_MONTHS.get(cls._norm(match.group(2)))
+        if not month:
+            return None
+        try:
+            return datetime(int(match.group(3)), month, int(match.group(1))).isoformat()
+        except ValueError:
+            return None
+
+    @classmethod
+    def _parse_date_value(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        numeric = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", value)
+        if numeric:
+            try:
+                return datetime.strptime(numeric.group(1), "%d/%m/%Y").isoformat()
+            except ValueError:
+                return None
+        match = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", value, re.I)
         if not match:
             return None
         month = SPANISH_MONTHS.get(cls._norm(match.group(2)))

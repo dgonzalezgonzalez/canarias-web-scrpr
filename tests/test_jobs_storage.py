@@ -129,3 +129,25 @@ def test_jobs_repository_merges_secondary_duplicate_signature(tmp_path):
     lines = output.read_text(encoding="utf-8")
     assert lines.count("Especialista de Mantenimiento") == 1
     assert "updated description" in lines
+
+
+def test_jobs_repository_deactivates_only_missing_source_snapshot(tmp_path):
+    repo = JobsRepository(tmp_path / "jobs.db")
+    first = _record(external_id="1", source_url="https://example.org/jobs/1", title="keep")
+    second = _record(external_id="2", source_url="https://example.org/jobs/2", title="expire")
+    repo.upsert_records([first, second])
+
+    removed = repo.deactivate_missing_source("sce", [first])
+    assert removed == 1
+    assert len(repo.read_all()) == 2
+    assert [item.title for item in repo.read_all(active_only=True)] == ["keep"]
+
+    output = tmp_path / "active.csv"
+    assert repo.export_csv(output) == 1
+    assert "keep" in output.read_text(encoding="utf-8")
+    assert "expire" not in output.read_text(encoding="utf-8")
+
+    # A returning offer is reactivated even when its payload is unchanged.
+    stats = repo.upsert_records([second])
+    assert stats.unchanged == 1
+    assert len(repo.read_all(active_only=True)) == 2

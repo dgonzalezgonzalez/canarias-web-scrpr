@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from ..jobs.utils import clean_text, infer_province_from_island
 from .models import GeographyNormalization
 
@@ -43,6 +46,60 @@ PROVINCE_ALIASES = {
 }
 
 
+def geography_key(value: str | None) -> str:
+    """Accent/punctuation-insensitive key for municipality and province matching."""
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    folded = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", folded).strip()
+
+
+# Complete Cantabrian municipality gazetteer used as a positive region gate for
+# third-party sources. Values are the canonical display names used in exports.
+_CANTABRIA_MUNICIPALITY_NAMES = (
+    "Alfoz de Lloredo", "Ampuero", "Anievas", "Arenas de Iguña", "Argoños", "Arnuero",
+    "Arredondo", "El Astillero", "Bárcena de Cicero", "Bárcena de Pie de Concha", "Bareyo",
+    "Cabezón de la Sal", "Cabezón de Liébana", "Cabuérniga", "Camaleño", "Camargo",
+    "Campoo de Enmedio", "Campoo de Yuso", "Cartes", "Castañeda", "Castro-Urdiales", "Cieza",
+    "Cillorigo de Liébana", "Colindres", "Comillas", "Los Corrales de Buelna", "Corvera de Toranzo",
+    "Entrambasaguas", "Escalante", "Guriezo", "Hazas de Cesto", "Hermandad de Campoo de Suso",
+    "Herrerías", "Lamasón", "Laredo", "Liendo", "Liérganes", "Limpias", "Luena", "Marina de Cudeyo",
+    "Mazcuerras", "Medio Cudeyo", "Meruelo", "Miengo", "Miera", "Molledo", "Noja", "Penagos",
+    "Peñarrubia", "Pesaguero", "Pesquera", "Piélagos", "Polaciones", "Polanco", "Potes",
+    "Puente Viesgo", "Ramales de la Victoria", "Rasines", "Reinosa", "Reocín", "Ribamontán al Mar",
+    "Ribamontán al Monte", "Rionansa", "Riotuerto", "Las Rozas de Valdearroyo", "Ruente", "Ruesga",
+    "Ruiloba", "San Felices de Buelna", "San Miguel de Aguayo", "San Pedro del Romeral",
+    "San Roque de Riomiera", "Santa Cruz de Bezana", "Santa María de Cayón", "Santander",
+    "Santillana del Mar", "Santiurde de Reinosa", "Santiurde de Toranzo", "San Vicente de la Barquera", "Santoña", "Saro", "Selaya",
+    "Soba", "Solórzano", "Suances", "Los Tojos", "Tresviso", "Tudanca", "Udías", "Val de San Vicente",
+    "Valdáliga", "Valdeolea", "Valdeprado del Río", "Valderredible", "Valle de Villaverde",
+    "Vega de Liébana", "Vega de Pas", "Villacarriedo", "Villaescusa", "Villafufre", "Voto",
+    "Torrelavega",
+)
+
+CANTABRIA_MUNICIPALITIES = {
+    geography_key(name): name for name in _CANTABRIA_MUNICIPALITY_NAMES
+}
+for _alias, _canonical in {
+    "Astillero": "El Astillero",
+    "Corrales de Buelna": "Los Corrales de Buelna",
+    "Tojos": "Los Tojos",
+    "Rozas de Valdearroyo": "Las Rozas de Valdearroyo",
+    # Maliaño is a major locality in the municipality of Camargo, and appears
+    # as a location label in third-party job feeds even though it is not a
+    # standalone municipality.
+    "Maliaño": "Maliaño",
+}.items():
+    CANTABRIA_MUNICIPALITIES[geography_key(_alias)] = _canonical
+
+MUNICIPALITY_LOOKUP = {
+    geography_key(key): value for key, value in MUNICIPALITY_INDEX.items()
+}
+for _key, _name in CANTABRIA_MUNICIPALITIES.items():
+    MUNICIPALITY_LOOKUP.setdefault(_key, (_name, None, "Cantabria"))
+
+
 def normalize_geography(
     province: str | None,
     municipality: str | None,
@@ -55,9 +112,9 @@ def normalize_geography(
     raw_location_clean = clean_text(raw_location)
 
     if municipality_clean:
-        key = municipality_clean.lower()
-        if key in MUNICIPALITY_INDEX:
-            canonical_municipality, canonical_island, canonical_province = MUNICIPALITY_INDEX[key]
+        key = geography_key(municipality_clean)
+        if key in MUNICIPALITY_LOOKUP:
+            canonical_municipality, canonical_island, canonical_province = MUNICIPALITY_LOOKUP[key]
             return GeographyNormalization(
                 province=canonical_province,
                 municipality=canonical_municipality,
@@ -79,7 +136,7 @@ def normalize_geography(
         )
 
     if province_clean:
-        canonical_province = PROVINCE_ALIASES.get(province_clean.lower(), province_clean)
+        canonical_province = PROVINCE_ALIASES.get(geography_key(province_clean), province_clean)
         return GeographyNormalization(
             province=canonical_province,
             municipality=municipality_clean,
@@ -88,8 +145,9 @@ def normalize_geography(
             confidence="province",
         )
 
-    if raw_location_clean and raw_location_clean.lower() in MUNICIPALITY_INDEX:
-        canonical_municipality, canonical_island, canonical_province = MUNICIPALITY_INDEX[raw_location_clean.lower()]
+    raw_key = geography_key(raw_location_clean.split(",", 1)[0] if raw_location_clean else None)
+    if raw_key in MUNICIPALITY_LOOKUP:
+        canonical_municipality, canonical_island, canonical_province = MUNICIPALITY_LOOKUP[raw_key]
         return GeographyNormalization(
             province=canonical_province,
             municipality=canonical_municipality,

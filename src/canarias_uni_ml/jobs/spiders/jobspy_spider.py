@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from ..models import JobRecord
 from ..utils import clean_text, infer_province_from_island, parse_date
+from ...normalization.geography import CANTABRIA_MUNICIPALITIES as SHARED_CANTABRIA_MUNICIPALITIES, geography_key
 from .base import SpiderError, SpiderResult
 
 if TYPE_CHECKING:
@@ -73,6 +74,11 @@ OUT_OF_REGION_MARKERS = {
     "asturias", "bizkaia", "vizcaya", "bilbao", "burgos", "palencia", "alava", "araba",
     "guipuzcoa", "gipuzkoa", "leon", "madrid", "barcelona", "navarra", "salamanca",
 }
+
+# Use the shared gazetteer as the authoritative validation set. The local
+# legacy aliases above remain harmless for backwards imports, but all matching
+# below uses normalized shared keys.
+CANTABRIA_MUNICIPALITIES = set(SHARED_CANTABRIA_MUNICIPALITIES)
 
 REGION_LOCATIONS = {
     "canarias": CANARY_ISLANDS_LOCATIONS,
@@ -144,7 +150,9 @@ class JobspySpider:
 
         if not records:
             raise SpiderError(f"JobSpy found no jobs in {self.region}")
-        return SpiderResult(source=self.source, records=records[:limit])
+        # JobSpy queries are provider-capped/best-effort; never deactivate
+        # previously seen provider rows from a partial third-party result.
+        return SpiderResult(source=self.source, records=records[:limit], complete=False)
 
     def _convert_row_to_record(self, row) -> JobRecord | None:
         title = clean_text(row.get("title"))
@@ -295,7 +303,7 @@ class JobspySpider:
             folded = JobspySpider._fold(location_lower)
             if "cantabria" in folded:
                 return "Cantabria"
-            first = JobspySpider._fold(location.split(",", 1)[0])
+            first = geography_key(location.split(",", 1)[0])
             if first in CANTABRIA_MUNICIPALITIES:
                 return "Cantabria"
             if any(marker in folded for marker in OUT_OF_REGION_MARKERS):
@@ -319,11 +327,11 @@ class JobspySpider:
         parts = location_clean.split(",")
         if len(parts) > 1:
             candidate = clean_text(parts[0])
-            return None if JobspySpider._fold(candidate or "") in {"cantabria", "cantabria spain"} else candidate
-        if JobspySpider._fold(location_clean) in {"cantabria", "cantabria spain"}:
+            return None if geography_key(candidate) in {"cantabria", "cantabria spain"} else candidate
+        if geography_key(location_clean) in {"cantabria", "cantabria spain"}:
             return None
-        if province == "Cantabria" and JobspySpider._fold(location_clean) in CANTABRIA_MUNICIPALITIES:
-            return location_clean
+        if province == "Cantabria" and geography_key(location_clean) in CANTABRIA_MUNICIPALITIES:
+            return SHARED_CANTABRIA_MUNICIPALITIES[geography_key(location_clean)]
         if province == "Cantabria":
             return location_clean
         return None

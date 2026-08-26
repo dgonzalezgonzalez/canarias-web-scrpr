@@ -41,7 +41,7 @@ class SCESpider:
             raise SpiderError("SCE returned no offers")
         records = [self._normalize_offer(offer) for offer in offers]
         records.sort(key=lambda item: item.publication_date or "", reverse=True)
-        return SpiderResult(source=self.source, records=records[:limit])
+        return SpiderResult(source=self.source, records=records[:limit], complete=len(records) <= limit)
 
     def _fetch_token(self) -> str:
         response = self.session.get(SCE_IFRAME_URL, timeout=30)

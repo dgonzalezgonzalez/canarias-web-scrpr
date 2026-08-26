@@ -19,6 +19,8 @@ class JobRecord:
     salary_period: str | None
     publication_date: str | None
     update_date: str | None
+    closing_date: str | None = None
+    is_active: bool = True
     province: str | None = None
     province_raw: str | None = None
     municipality: str | None = None

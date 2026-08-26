@@ -72,7 +72,9 @@ class TurijobsSpider:
 
         if not records:
             raise SpiderError("Turijobs detail pages could not be scraped")
-        return SpiderResult(source=self.source, records=records[:limit])
+        # Sitemap candidate cap plus detail filtering means this is not a
+        # complete census; stale rows must remain until a dedicated full crawl.
+        return SpiderResult(source=self.source, records=records[:limit], complete=False)
 
     def _fetch_candidate_urls(self, cap: int) -> list[str]:
         response = self.session.get(TURIJOBS_SITEMAP_URL, timeout=30)

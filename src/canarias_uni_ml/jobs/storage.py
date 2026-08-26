@@ -13,7 +13,7 @@ from .models import JobRecord
 from .utils import clean_text
 
 JOB_FIELDS = tuple(field.name for field in fields(JobRecord))
-VOLATILE_HASH_FIELDS = {"scraped_at"}
+VOLATILE_HASH_FIELDS = {"scraped_at", "is_active"}
 
 
 @dataclass(slots=True)
@@ -109,6 +109,10 @@ class JobsRepository:
             cols = [row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
             if "secondary_key" not in cols:
                 conn.execute("ALTER TABLE jobs ADD COLUMN secondary_key TEXT")
+            if "closing_date" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN closing_date TEXT")
+            if "is_active" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN is_active TEXT NOT NULL DEFAULT '1'")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_secondary_key ON jobs(secondary_key)")
             conn.commit()
@@ -150,7 +154,8 @@ class JobsRepository:
                         """
                         UPDATE jobs
                         SET last_seen_at = ?,
-                            secondary_key = ?
+                            secondary_key = ?,
+                            is_active = '1'
                         WHERE job_key = ?
                         """,
                         (now, secondary_key, existing["job_key"]),
@@ -171,6 +176,32 @@ class JobsRepository:
             conn.commit()
         return stats
 
+    def deactivate_missing_source(self, source: str, records: Iterable[JobRecord]) -> int:
+        """Deactivate rows absent from a complete source snapshot.
+
+        Callers must only invoke this after a source has proved its crawl was
+        complete. Capped, blocked, and partial sources intentionally leave
+        historical rows active so a transient outage cannot erase the snapshot.
+        """
+        source_clean = clean_text(source)
+        if not source_clean:
+            return 0
+        active_keys = {canonical_job_key(record) for record in records}
+        with self._connect() as conn:
+            if active_keys:
+                placeholders = ", ".join("?" for _ in active_keys)
+                cursor = conn.execute(
+                    f"UPDATE jobs SET is_active = '0' WHERE source = ? AND job_key NOT IN ({placeholders})",
+                    (source_clean, *sorted(active_keys)),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE jobs SET is_active = '0' WHERE source = ?",
+                    (source_clean,),
+                )
+            conn.commit()
+            return int(cursor.rowcount)
+
     def compact_latest_records(self) -> CompactionStats:
         with self._connect() as conn:
             rows = conn.execute(
@@ -186,7 +217,7 @@ class JobsRepository:
             winners_primary: dict[str, sqlite3.Row] = {}
             ties = 0
             for row in rows:
-                record = JobRecord(**{name: row[name] for name in JOB_FIELDS})
+                record = self._record_from_row(row)
                 logical_key = canonical_job_key(record)
                 current = winners_primary.get(logical_key)
                 if current is None:
@@ -199,7 +230,7 @@ class JobsRepository:
 
             winners: dict[str, sqlite3.Row] = {}
             for row in winners_primary.values():
-                record = JobRecord(**{name: row[name] for name in JOB_FIELDS})
+                record = self._record_from_row(row)
                 logical_key = canonical_secondary_merge_key(record) or canonical_job_key(record)
                 current = winners.get(logical_key)
                 if current is None:
@@ -218,26 +249,38 @@ class JobsRepository:
         after = len(winners)
         return CompactionStats(before=before, after=after, removed=before - after, ambiguous_ties=ties)
 
-    def export_csv(self, output_path: str | Path) -> int:
+    def export_csv(self, output_path: str | Path, *, active_only: bool = True) -> int:
         query = f"""
             SELECT {", ".join(f'"{name}"' for name in JOB_FIELDS)}
             FROM jobs
+            {"WHERE is_active <> '0'" if active_only else ""}
             ORDER BY COALESCE(publication_date, '') DESC, source ASC
         """
         with self._connect() as conn:
             rows = conn.execute(query).fetchall()
-        records = [JobRecord(**{name: row[name] for name in JOB_FIELDS}) for row in rows]
+        records = [self._record_from_row(row) for row in rows]
         return write_csv_rows(records, output_path)
 
-    def read_all(self) -> list[JobRecord]:
+    def read_all(self, *, active_only: bool = False) -> list[JobRecord]:
         query = f"""
             SELECT {", ".join(f'"{name}"' for name in JOB_FIELDS)}
             FROM jobs
+            {"WHERE is_active <> '0'" if active_only else ""}
             ORDER BY source ASC, title ASC
         """
         with self._connect() as conn:
             rows = conn.execute(query).fetchall()
-        return [JobRecord(**{name: row[name] for name in JOB_FIELDS}) for row in rows]
+        return [self._record_from_row(row) for row in rows]
+
+    @staticmethod
+    def _record_from_row(row: sqlite3.Row) -> JobRecord:
+        values = {name: row[name] for name in JOB_FIELDS}
+        active = values.get("is_active")
+        if isinstance(active, str):
+            values["is_active"] = active.strip().casefold() not in {"", "0", "false", "no", "off"}
+        else:
+            values["is_active"] = bool(active) if active is not None else True
+        return JobRecord(**values)
 
     def _insert(
         self,

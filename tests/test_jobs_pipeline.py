@@ -42,12 +42,13 @@ def test_select_with_source_coverage_keeps_at_least_one_per_source():
 
 
 class StaticSpider:
-    def __init__(self, source: str, records: list[JobRecord]) -> None:
+    def __init__(self, source: str, records: list[JobRecord], *, complete: bool = True) -> None:
         self.source = source
         self._records = records
+        self._complete = complete
 
     def fetch(self, limit: int) -> SpiderResult:
-        return SpiderResult(source=self.source, records=self._records[:limit])
+        return SpiderResult(source=self.source, records=self._records[:limit], complete=self._complete)
 
 
 class FailingSpider:
@@ -125,6 +126,50 @@ def test_run_jobs_pipeline_with_outcome_reports_updates(tmp_path):
     assert outcome.exit_code == 0
     assert outcome.inserted == 1
     assert outcome.strategy == "scrape"
+
+
+def test_run_jobs_pipeline_deactivates_missing_complete_source_rows(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+    old = _record("emcan", 1, title="old")
+    new = _record("emcan", 2, title="new")
+    run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("emcan", [old, new])],
+    )
+    run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("emcan", [new])],
+    )
+    rows = output.read_text(encoding="utf-8")
+    assert "new" in rows
+    assert "old" not in rows
+
+
+def test_run_jobs_pipeline_keeps_rows_for_partial_source(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+    old = _record("jobspy_indeed", 1, title="old")
+    new = _record("jobspy_indeed", 2, title="new")
+    run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("jobspy", [old, new], complete=False)],
+    )
+    run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("jobspy", [new], complete=False)],
+    )
+    rows = output.read_text(encoding="utf-8")
+    assert "new" in rows
+    assert "old" in rows
 
 
 def test_run_jobs_scale_with_outcome_uses_scale_stats(tmp_path, monkeypatch):

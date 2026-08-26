@@ -17,6 +17,15 @@ def test_normalize_cantabria_municipality_has_no_island():
     assert result.province == "Cantabria"
 
 
+def test_normalize_cantabria_official_municipality_aliases_and_accents():
+    result = normalize_geography(None, "Corrales de Buelna", None, None)
+    assert result.municipality == "Los Corrales de Buelna"
+    assert result.province == "Cantabria"
+
+    result = normalize_geography(None, "CASTRO URDIALES", None, None)
+    assert result.municipality == "Castro-Urdiales"
+
+
 def test_clean_record_normalizes_geography_and_contract():
     record = JobRecord(
         source="jobspy_indeed",

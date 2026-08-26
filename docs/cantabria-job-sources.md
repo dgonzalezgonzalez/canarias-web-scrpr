@@ -9,7 +9,7 @@ Research date: 2026-08-25. Goal: collect occupation titles and substantive job d
 - Official current-offer search: `https://www.sistemanacionalempleo.es/OfertaDifusionWEB/busquedaOfertas.do?botonNavegacion=Enviar&modo=continuar&provincia=39`
 - Regional portal: `https://empleacantabria.es/ofertas-cantabria`
 - Coverage observed: roughly 100-140 simultaneous active offers during July-August 2026.
-- Detail quality: occupation, start/end dates, municipality, long `Datos adicionales`, contract/workday/salary text, vacancies, requirements, and contact instructions.
+- Detail quality: occupation, publication/start and closing/end dates, municipality, long `Datos adicionales`, contract/workday/salary text, vacancies, requirements, and contact instructions.
 - Implementation: `EmcanSpider` opens the province-39 result page with one `requests.Session`, follows offer and pagination links, and stores a stable detail URL without the transient `idFlujo` parameter.
 - Main risk: legacy Java session/pagination parameters can change. Fixture tests cover current semantic labels instead of brittle CSS classes. The spider is isolated and failure-tolerant.
 
@@ -20,7 +20,7 @@ This is the closest Cantabrian replacement for the Canary Islands SCE source. Pr
 - Listing: `https://www.trabajocantabria.com/ofertas/`
 - Publisher: Agencia de Colocación CEOE-CEPYME Cantabria.
 - Coverage observed: dozens of active offers across Santander, Torrelavega, Camargo, Laredo, Reocín, and other municipalities.
-- Detail quality: strong. Pages expose title, publication date, description, functions, offered conditions, location, vacancies, minimum education, contract duration, workday, and salary.
+- Detail quality: strong. Pages expose title, publication date, registration closing date, description, functions, offered conditions, location, vacancies, minimum education, contract duration, workday, and salary.
 - Implementation: server-rendered HTML with `requests` + BeautifulSoup; no browser dependency.
 - Main risk: HTML headings may change. Parser uses visible semantic labels and has fixture tests.
 
@@ -83,6 +83,7 @@ Recommended future command: a separate `jobs history --source santander-open-dat
 - Use `--sources emcan,trabajocantabria` only after that review; the CLI keeps source selection explicit so an operator can document the approved set.
 - Default concurrency remains one worker per source. Each local spider requests detail pages sequentially with 30-second timeouts.
 - Keep one complete nightly crawl (the Cantabria unit uses a 24-hour cooldown) and persistent deduplication. Do not hammer sources to manufacture volume.
+- SQLite stores `is_active` plus `first_seen_at`/`last_seen_at`; EMCAN and Trabajo Cantabria deactivate missing rows only when the bounded crawl proves it reached the end of the listing. JobSpy/Turijobs are intentionally treated as partial.
 - Re-check each source's current terms and `robots.txt` from the deployment VM before production; this research environment could inspect indexed public content but could not directly retrieve every robots endpoint.
 - Contact instructions can contain public emails. The EMCAN parser intentionally excludes `Datos de contacto` from the normalized description because occupation analysis does not need it.
 

@@ -73,6 +73,7 @@ def test_emcan_detail_parser_extracts_occupation_and_full_description():
     assert record.municipality == "PIELAGOS"
     assert record.province == "Cantabria"
     assert record.publication_date == "2026-06-19T00:00:00"
+    assert record.closing_date == "2026-07-04T00:00:00"
     assert record.update_date is None
     assert record.contract_type == "INDEFINIDO"
     assert record.workday == "PARCIAL DE 20H"
